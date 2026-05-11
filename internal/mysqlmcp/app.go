@@ -155,6 +155,7 @@ func (a *App) listTables(ctx context.Context, _ *mcp.CallToolRequest, in ListTab
 	if err != nil {
 		return nil, ListTablesOutput{}, sanitizeErr("list tables failed", err)
 	}
+	defer rows.cancel()
 	defer rows.Close()
 
 	var tables []TableInfo
@@ -293,6 +294,7 @@ func (a *App) schemas(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, sanitizeErr("list schemas failed", err)
 	}
+	defer rows.cancel()
 	defer rows.Close()
 
 	var schemas []string
@@ -320,6 +322,7 @@ func (a *App) columns(ctx context.Context, schema, table string) ([]ColumnInfo, 
 	if err != nil {
 		return nil, sanitizeErr("describe columns failed", err)
 	}
+	defer rows.cancel()
 	defer rows.Close()
 
 	var columns []ColumnInfo
@@ -359,6 +362,7 @@ func (a *App) indexes(ctx context.Context, schema, table string) ([]IndexInfo, e
 	if err != nil {
 		return nil, sanitizeErr("describe indexes failed", err)
 	}
+	defer rows.cancel()
 	defer rows.Close()
 
 	var indexes []IndexInfo
@@ -498,10 +502,19 @@ func (a *App) requireSchema(schema string) error {
 	return nil
 }
 
-func (a *App) withTimeout(ctx context.Context, fn func(context.Context) (*sql.Rows, error)) (*sql.Rows, error) {
+type timedRows struct {
+	*sql.Rows
+	cancel context.CancelFunc
+}
+
+func (a *App) withTimeout(ctx context.Context, fn func(context.Context) (*sql.Rows, error)) (*timedRows, error) {
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
-	defer cancel()
-	return fn(ctx)
+	rows, err := fn(ctx)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	return &timedRows{Rows: rows, cancel: cancel}, nil
 }
 
 func (a *App) maxRows(requested int) int {
