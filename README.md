@@ -38,6 +38,8 @@ export MYSQL_MCP_MAX_ROWS=100
 export MYSQL_MCP_TIMEOUT_MS=5000
 ```
 
+You can also place these values in a local `.env` file in the current working directory. Existing environment variables take precedence over `.env` values.
+
 Optional:
 
 ```bash
@@ -89,4 +91,3 @@ git push origin v0.1.0
 ```
 
 GitHub Actions runs GoReleaser and uploads archives for macOS and Linux.
-

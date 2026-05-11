@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -24,6 +26,8 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	_ = godotenv.Load()
+
 	cfg := Config{
 		Host:           getenv("MYSQL_MCP_HOST", "127.0.0.1"),
 		Port:           getenvInt("MYSQL_MCP_PORT", 3306),
