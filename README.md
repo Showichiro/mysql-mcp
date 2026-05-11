@@ -66,6 +66,17 @@ go build -o bin/mysql-mcp ./cmd/mysql-mcp
 ./bin/mysql-mcp
 ```
 
+## Install with Homebrew
+
+After a tagged release is published, install from the tap:
+
+```bash
+brew tap Showichiro/tap
+brew install mysql-mcp
+```
+
+The `Showichiro/homebrew-tap` repository checks releases on a schedule and updates the formula.
+
 ## Claude Code MCP config
 
 ```json
