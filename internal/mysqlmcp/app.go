@@ -82,8 +82,8 @@ func (a *App) Register(server *mcp.Server) {
 	}, a.describeTable)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "mysql_query",
-		Title:       "Run read-only MySQL query",
-		Description: "Run one bounded read-only SQL statement. Only SELECT, SHOW, DESCRIBE, and EXPLAIN are allowed.",
+		Title:       "Run MySQL query",
+		Description: "Run one bounded SQL statement. Writes require MYSQL_MCP_ALLOW_WRITES=true.",
 	}, a.query)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "mysql_explain",
@@ -234,7 +234,7 @@ func (a *App) describeTable(ctx context.Context, _ *mcp.CallToolRequest, in Desc
 }
 
 type QueryInput struct {
-	SQL       string `json:"sql" jsonschema:"Single read-only SQL statement"`
+	SQL       string `json:"sql" jsonschema:"Single SQL statement"`
 	MaxRows   int    `json:"maxRows,omitempty" jsonschema:"Optional per-call row limit, capped by server max"`
 	TimeoutMs int    `json:"timeoutMs,omitempty" jsonschema:"Optional per-call timeout in milliseconds, capped by server max"`
 }
@@ -246,14 +246,23 @@ type QueryOutput struct {
 	Rows            []map[string]any `json:"rows"`
 	RowCount        int              `json:"rowCount"`
 	Truncated       bool             `json:"truncated"`
+	AffectedRows    *int64           `json:"affectedRows,omitempty"`
+	LastInsertID    *int64           `json:"lastInsertId,omitempty"`
 	ExecutionTimeMs int64            `json:"executionTimeMs"`
 }
 
 func (a *App) query(ctx context.Context, _ *mcp.CallToolRequest, in QueryInput) (*mcp.CallToolResult, QueryOutput, error) {
 	maxRows := a.maxRows(in.MaxRows)
-	checked, err := sqlguard.CheckReadOnly(in.SQL, maxRows)
+	checked, err := sqlguard.Check(in.SQL, maxRows, a.cfg.AllowWrites)
 	if err != nil {
 		return nil, QueryOutput{}, err
+	}
+	if checked.Kind == sqlguard.KindWrite {
+		out, err := a.runExec(ctx, checked.SQL, in.TimeoutMs)
+		if err != nil {
+			return nil, QueryOutput{}, err
+		}
+		return nil, out, nil
 	}
 	out, err := a.runQuery(ctx, checked.SQL, string(checked.Kind), maxRows, in.TimeoutMs)
 	if err != nil {
@@ -432,6 +441,35 @@ func (a *App) runQuery(ctx context.Context, sqlText, kind string, maxRows, timeo
 		Rows:            outRows,
 		RowCount:        len(outRows),
 		Truncated:       truncated,
+		ExecutionTimeMs: time.Since(start).Milliseconds(),
+	}, nil
+}
+
+func (a *App) runExec(ctx context.Context, sqlText string, timeoutMs int) (QueryOutput, error) {
+	timeout := a.timeout(timeoutMs)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	start := time.Now()
+	result, err := a.db.ExecContext(ctx, sqlText)
+	if err != nil {
+		return QueryOutput{}, sanitizeErr("query failed", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return QueryOutput{}, sanitizeErr("read affected rows failed", err)
+	}
+	lastInsertID, err := result.LastInsertId()
+	if err != nil {
+		lastInsertID = 0
+	}
+
+	a.log.Printf("kind=%s affected_rows=%d elapsed_ms=%d", sqlguard.KindWrite, affected, time.Since(start).Milliseconds())
+	return QueryOutput{
+		SQL:             sqlText,
+		Kind:            string(sqlguard.KindWrite),
+		AffectedRows:    &affected,
+		LastInsertID:    &lastInsertID,
 		ExecutionTimeMs: time.Since(start).Milliseconds(),
 	}, nil
 }

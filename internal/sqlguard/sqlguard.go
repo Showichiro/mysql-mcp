@@ -10,7 +10,8 @@ var (
 	lineComment  = regexp.MustCompile(`(?m)--.*$|#.*$`)
 	blockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
 	limitRe      = regexp.MustCompile(`(?i)\blimit\s+\d+(\s*,\s*\d+)?\b`)
-	dangerRe     = regexp.MustCompile(`(?i)\b(insert|update|delete|replace|create|alter|drop|truncate|grant|revoke|call|load\s+data|set|start\s+transaction|begin|commit|rollback)\b`)
+	adminRe      = regexp.MustCompile(`(?i)\b(create|alter|drop|truncate|grant|revoke|call|load\s+data|start\s+transaction|begin|commit|rollback)\b`)
+	writeRe      = regexp.MustCompile(`(?i)\b(insert|update|delete|replace)\b`)
 )
 
 type Kind string
@@ -20,6 +21,7 @@ const (
 	KindShow     Kind = "show"
 	KindDescribe Kind = "describe"
 	KindExplain  Kind = "explain"
+	KindWrite    Kind = "write"
 )
 
 type Checked struct {
@@ -28,6 +30,10 @@ type Checked struct {
 }
 
 func CheckReadOnly(sql string, maxRows int) (Checked, error) {
+	return Check(sql, maxRows, false)
+}
+
+func Check(sql string, maxRows int, allowWrites bool) (Checked, error) {
 	normalized := normalize(sql)
 	if normalized == "" {
 		return Checked{}, fmt.Errorf("sql is required")
@@ -35,11 +41,14 @@ func CheckReadOnly(sql string, maxRows int) (Checked, error) {
 	if hasMultipleStatements(normalized) {
 		return Checked{}, fmt.Errorf("multiple SQL statements are not allowed")
 	}
-	if dangerRe.MatchString(normalized) {
-		return Checked{}, fmt.Errorf("write or administrative SQL is not allowed")
+	if adminRe.MatchString(normalized) {
+		return Checked{}, fmt.Errorf("administrative SQL is not allowed")
+	}
+	if writeRe.MatchString(normalized) && !allowWrites {
+		return Checked{}, fmt.Errorf("write SQL is not allowed")
 	}
 
-	kind, err := classify(normalized)
+	kind, err := classify(normalized, allowWrites)
 	if err != nil {
 		return Checked{}, err
 	}
@@ -72,7 +81,7 @@ func hasMultipleStatements(sql string) bool {
 	return strings.Contains(sql, ";")
 }
 
-func classify(sql string) (Kind, error) {
+func classify(sql string, allowWrites bool) (Kind, error) {
 	lower := strings.ToLower(strings.TrimSpace(sql))
 	switch {
 	case strings.HasPrefix(lower, "select "):
@@ -85,7 +94,15 @@ func classify(sql string) (Kind, error) {
 		return KindDescribe, nil
 	case strings.HasPrefix(lower, "explain "):
 		return KindExplain, nil
+	case allowWrites && (strings.HasPrefix(lower, "insert ") ||
+		strings.HasPrefix(lower, "update ") ||
+		strings.HasPrefix(lower, "delete ") ||
+		strings.HasPrefix(lower, "replace ")):
+		return KindWrite, nil
 	default:
+		if allowWrites {
+			return "", fmt.Errorf("only SELECT, SHOW, DESCRIBE, EXPLAIN, INSERT, UPDATE, DELETE, and REPLACE are allowed")
+		}
 		return "", fmt.Errorf("only SELECT, SHOW, DESCRIBE, and EXPLAIN are allowed")
 	}
 }

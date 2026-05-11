@@ -20,6 +20,7 @@ type Config struct {
 	SSL            bool
 	MaxRows        int
 	Timeout        time.Duration
+	AllowWrites    bool
 	AllowedSchemas map[string]bool
 	MaxCellChars   int
 	LogLevel       string
@@ -37,6 +38,7 @@ func Load() (Config, error) {
 		SSL:            getenvBool("MYSQL_MCP_SSL", false),
 		MaxRows:        getenvInt("MYSQL_MCP_MAX_ROWS", 100),
 		Timeout:        time.Duration(getenvInt("MYSQL_MCP_TIMEOUT_MS", 5000)) * time.Millisecond,
+		AllowWrites:    getenvBool("MYSQL_MCP_ALLOW_WRITES", false),
 		AllowedSchemas: parseCSVSet(os.Getenv("MYSQL_MCP_ALLOWED_SCHEMAS")),
 		MaxCellChars:   getenvInt("MYSQL_MCP_MAX_CELL_CHARS", 4096),
 		LogLevel:       getenv("MYSQL_MCP_LOG_LEVEL", "info"),

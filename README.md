@@ -1,14 +1,15 @@
 # mysql-mcp
 
-Read-only MySQL MCP server for local stdio integrations.
+MySQL MCP server for local stdio integrations. It is read-only by default and can optionally allow writes by configuration.
 
-`mysql-mcp` lets agents inspect schemas, describe tables, run bounded read-only queries, and check `EXPLAIN` plans without granting write access.
+`mysql-mcp` lets agents inspect schemas, describe tables, run bounded queries, check `EXPLAIN` plans, and optionally run limited write statements.
 
 ## Features
 
 - stdio MCP server built with the official Go MCP SDK
 - Read-only tools for MySQL schema inspection
 - Conservative SQL guard for `SELECT`, `SHOW`, `DESCRIBE`, and `EXPLAIN`
+- Optional write mode for single `INSERT`, `UPDATE`, `DELETE`, and `REPLACE` statements
 - Automatic `LIMIT` enforcement for `SELECT`
 - Query timeout, max rows, and cell-size truncation
 - Binary release setup with GoReleaser
@@ -20,7 +21,7 @@ Read-only MySQL MCP server for local stdio integrations.
 | `mysql_list_schemas` | List accessible schemas |
 | `mysql_list_tables` | List tables in a schema |
 | `mysql_describe_table` | Return columns and indexes for a table |
-| `mysql_query` | Run a bounded read-only SQL statement |
+| `mysql_query` | Run one bounded SQL statement; writes require `MYSQL_MCP_ALLOW_WRITES=true` |
 | `mysql_explain` | Run `EXPLAIN` for a SELECT statement |
 
 ## Configuration
@@ -36,6 +37,7 @@ export MYSQL_MCP_DATABASE=app_db
 export MYSQL_MCP_SSL=false
 export MYSQL_MCP_MAX_ROWS=100
 export MYSQL_MCP_TIMEOUT_MS=5000
+export MYSQL_MCP_ALLOW_WRITES=false
 ```
 
 You can also place these values in a local `.env` file in the current working directory. Existing environment variables take precedence over `.env` values.
@@ -48,7 +50,9 @@ export MYSQL_MCP_MAX_CELL_CHARS=4096
 export MYSQL_MCP_LOG_LEVEL=info
 ```
 
-Use a database user that is read-only. The SQL guard is defense in depth, not a replacement for database privileges.
+By default, write SQL is rejected. Set `MYSQL_MCP_ALLOW_WRITES=true` to allow single `INSERT`, `UPDATE`, `DELETE`, and `REPLACE` statements through `mysql_query`. DDL, transaction control, grants, calls, `LOAD DATA`, and multiple statements remain blocked.
+
+Use a database user with only the privileges this server should expose. The SQL guard is defense in depth, not a replacement for database privileges.
 
 ## Build
 
